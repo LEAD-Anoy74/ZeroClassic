@@ -1,5 +1,5 @@
 
-![Alt text](https://github.com/LEAD-Anoy74/ZeroClassic/blob/master/art/zero_icon.png?raw=true "ZeroClassic")
+![Alt text](https://zeroclassic.org/assets/images/logos/zerc-logo-trans-purp.png "ZeroClassic")
 
 [ZERC](https://github.com/zeroclassic/ZeroClassic/) is a fork of ZeroCurrency and Zero.
 Zero is a fork of Bitcoin that adds shielded transaction via zk-SNARKs.
