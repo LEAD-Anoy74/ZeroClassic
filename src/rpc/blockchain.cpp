@@ -1,13 +1,14 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "amount.h"
 #include "chain.h"
 #include "chainparams.h"
 #include "checkpoints.h"
 #include "consensus/validation.h"
+#include "key_io.h"
 #include "main.h"
 #include "primitives/transaction.h"
 #include "rpc/server.h"
@@ -114,6 +115,95 @@ UniValue blockheaderToJSON(const CBlockIndex* blockindex)
     result.push_back(Pair("nonce", blockindex->nNonce.GetHex()));
     result.push_back(Pair("solution", HexStr(blockindex->nSolution)));
     result.push_back(Pair("bits", strprintf("%08x", blockindex->nBits)));
+    result.push_back(Pair("difficulty", GetDifficulty(blockindex)));
+    result.push_back(Pair("chainwork", blockindex->nChainWork.GetHex()));
+
+    if (blockindex->pprev)
+        result.push_back(Pair("previousblockhash", blockindex->pprev->GetBlockHash().GetHex()));
+    CBlockIndex *pnext = chainActive.Next(blockindex);
+    if (pnext)
+        result.push_back(Pair("nextblockhash", pnext->GetBlockHash().GetHex()));
+    return result;
+}
+
+// insightexplorer
+UniValue blockToDeltasJSON(const CBlock& block, const CBlockIndex* blockindex)
+{
+    UniValue result(UniValue::VOBJ);
+    result.push_back(Pair("hash", block.GetHash().GetHex()));
+    // Only report confirmations if the block is on the main chain
+    if (!chainActive.Contains(blockindex))
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block is an orphan");
+    int confirmations = chainActive.Height() - blockindex->nHeight + 1;
+    result.push_back(Pair("confirmations", confirmations));
+    result.push_back(Pair("size", (int)::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
+    result.push_back(Pair("height", blockindex->nHeight));
+    result.push_back(Pair("version", block.nVersion));
+    result.push_back(Pair("merkleroot", block.hashMerkleRoot.GetHex()));
+
+    UniValue deltas(UniValue::VARR);
+    for (unsigned int i = 0; i < block.vtx.size(); i++) {
+        const CTransaction &tx = block.vtx[i];
+        const uint256 txhash = tx.GetHash();
+
+        UniValue entry(UniValue::VOBJ);
+        entry.push_back(Pair("txid", txhash.GetHex()));
+        entry.push_back(Pair("index", (int)i));
+
+        UniValue inputs(UniValue::VARR);
+        if (!tx.IsCoinBase()) {
+            for (size_t j = 0; j < tx.vin.size(); j++) {
+                const CTxIn input = tx.vin[j];
+                UniValue delta(UniValue::VOBJ);
+                CSpentIndexValue spentInfo;
+                CSpentIndexKey spentKey(input.prevout.hash, input.prevout.n);
+
+                if (!GetSpentIndex(spentKey, spentInfo)) {
+                    throw JSONRPCError(RPC_INTERNAL_ERROR, "Spent information not available");
+                }
+                CTxDestination dest = DestFromAddressHash(spentInfo.addressType, spentInfo.addressHash);
+                if (IsValidDestination(dest)) {
+                    delta.push_back(Pair("address", EncodeDestination(dest)));
+                }
+                delta.push_back(Pair("satoshis", -1 * spentInfo.satoshis));
+                delta.push_back(Pair("index", (int)j));
+                delta.push_back(Pair("prevtxid", input.prevout.hash.GetHex()));
+                delta.push_back(Pair("prevout", (int)input.prevout.n));
+
+                inputs.push_back(delta);
+            }
+        }
+        entry.push_back(Pair("inputs", inputs));
+
+        UniValue outputs(UniValue::VARR);
+        for (unsigned int k = 0; k < tx.vout.size(); k++) {
+            const CTxOut &out = tx.vout[k];
+            UniValue delta(UniValue::VOBJ);
+            const uint160 addrhash = out.scriptPubKey.AddressHash();
+            CTxDestination dest;
+
+            if (out.scriptPubKey.IsPayToScriptHash()) {
+                dest = CScriptID(addrhash);
+            } else if (out.scriptPubKey.IsPayToPublicKeyHash()) {
+                dest = CKeyID(addrhash);
+            }
+            if (IsValidDestination(dest)) {
+                delta.push_back(Pair("address", EncodeDestination(dest)));
+            }
+            delta.push_back(Pair("address", EncodeDestination(dest)));
+            delta.push_back(Pair("satoshis", out.nValue));
+            delta.push_back(Pair("index", (int)k));
+
+            outputs.push_back(delta);
+        }
+        entry.push_back(Pair("outputs", outputs));
+        deltas.push_back(entry);
+    }
+    result.push_back(Pair("deltas", deltas));
+    result.push_back(Pair("time", block.GetBlockTime()));
+    result.push_back(Pair("mediantime", (int64_t)blockindex->GetMedianTimePast()));
+    result.push_back(Pair("nonce", block.nNonce.GetHex()));
+    result.push_back(Pair("bits", strprintf("%08x", block.nBits)));
     result.push_back(Pair("difficulty", GetDifficulty(blockindex)));
     result.push_back(Pair("chainwork", blockindex->nChainWork.GetHex()));
 
@@ -313,6 +403,174 @@ UniValue getrawmempool(const UniValue& params, bool fHelp)
     return mempoolToJSON(fVerbose);
 }
 
+// insightexplorer
+UniValue getblockdeltas(const UniValue& params, bool fHelp)
+{
+    std::string enableArg = "insightexplorer";
+    bool enabled = fExperimentalMode && fInsightExplorer;
+    std::string disabledMsg = "";
+    if (!enabled) {
+        disabledMsg = experimentalDisabledHelpMsg("getblockdeltas", enableArg);
+    }
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "getblockdeltas \"blockhash\"\n"
+            "\nReturns information about the given block and its transactions.\n"
+            + disabledMsg +
+            "\nArguments:\n"
+            "1. \"hash\"          (string, required) The block hash\n"
+            "\nResult:\n"
+            "{\n"
+            "  \"hash\": \"hash\",              (string) block ID\n"
+            "  \"confirmations\": n,          (numeric) number of confirmations\n"
+            "  \"size\": n,                   (numeric) block size in bytes\n"
+            "  \"height\": n,                 (numeric) block height\n"
+            "  \"version\": n,                (numeric) block version (e.g. 4)\n"
+            "  \"merkleroot\": \"hash\",        (hexstring) block Merkle root\n"
+            "  \"deltas\": [\n"
+            "    {\n"
+            "      \"txid\": \"hash\",          (hexstring) transaction ID\n"
+            "      \"index\": n,              (numeric) The offset of the tx in the block\n"
+            "      \"inputs\": [                (array of json objects)\n"
+            "        {\n"
+            "          \"address\": \"taddr\",  (string) transparent address\n"
+            "          \"satoshis\": n,       (numeric) negative of spend amount\n"
+            "          \"index\": n,          (numeric) vin index\n"
+            "          \"prevtxid\": \"hash\",  (string) source utxo tx ID\n"
+            "          \"prevout\": n         (numeric) source utxo index\n"
+            "        }, ...\n"
+            "      ],\n"
+            "      \"outputs\": [             (array of json objects)\n"
+            "        {\n"
+            "          \"address\": \"taddr\",  (string) transparent address\n"
+            "          \"satoshis\": n,       (numeric) amount\n"
+            "          \"index\": n           (numeric) vout index\n"
+            "        }, ...\n"
+            "      ]\n"
+            "    }, ...\n"
+            "  ],\n"
+            "  \"time\" : n,                  (numeric) The block version\n"
+            "  \"mediantime\": n,             (numeric) The most recent blocks' ave time\n"
+            "  \"nonce\" : \"nonce\",           (hex string) The nonce\n"
+            "  \"bits\" : \"1d00ffff\",         (hex string) The bits\n"
+            "  \"difficulty\": n,             (numeric) the current difficulty\n"
+            "  \"chainwork\": \"xxxx\"          (hex string) total amount of work in active chain\n"
+            "  \"previousblockhash\" : \"hash\",(hex string) The hash of the previous block\n"
+            "  \"nextblockhash\" : \"hash\"     (hex string) The hash of the next block\n"
+            "}\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getblockdeltas", "00227e566682aebd6a7a5b772c96d7a999cadaebeaf1ce96f4191a3aad58b00b")
+            + HelpExampleRpc("getblockdeltas", "\"00227e566682aebd6a7a5b772c96d7a999cadaebeaf1ce96f4191a3aad58b00b\"")
+        );
+
+    if (!enabled) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Error: getblockdeltas is disabled. "
+            "Run './zero-cli help getblockdeltas' for instructions on how to enable this feature.");
+    }
+
+    std::string strHash = params[0].get_str();
+    uint256 hash(uint256S(strHash));
+
+    LOCK(cs_main);
+    
+    if (mapBlockIndex.count(hash) == 0)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
+
+    CBlock block;
+    CBlockIndex* pblockindex = mapBlockIndex[hash];
+
+    if (fHavePruned && !(pblockindex->nStatus & BLOCK_HAVE_DATA) && pblockindex->nTx > 0)
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "Block not available (pruned data)");
+
+    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus()))
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "Can't read block from disk");
+
+    return blockToDeltasJSON(block, pblockindex);
+}
+
+// insightexplorer
+UniValue getblockhashes(const UniValue& params, bool fHelp)
+{
+    std::string enableArg = "insightexplorer";
+    bool fEnableGetBlockHashes = fExperimentalMode && fInsightExplorer;
+    std::string disabledMsg = "";
+    if (!fEnableGetBlockHashes) {
+        disabledMsg = experimentalDisabledHelpMsg("getblockhashes", enableArg);
+    }
+    if (fHelp || params.size() < 2)
+        throw runtime_error(
+            "getblockhashes high low ( {\"noOrphans\": true|false, \"logicalTimes\": true|false} )\n"
+            "\nReturns array of hashes of blocks within the timestamp range provided,\n"
+            "\ngreater or equal to low, less than high.\n"
+            + disabledMsg +
+            "\nArguments:\n"
+            "1. high                            (numeric, required) The newer block timestamp\n"
+            "2. low                             (numeric, required) The older block timestamp\n"
+            "3. options                         (string, optional) A json object\n"
+            "    {\n"
+            "      \"noOrphans\": true|false      (boolean) will only include blocks on the main chain\n"
+            "      \"logicalTimes\": true|false   (boolean) will include logical timestamps with hashes\n"
+            "    }\n"
+            "\nResult:\n"
+            "[\n"
+            "  \"xxxx\"                   (hex string) The block hash\n"
+            "]\n"
+            "or\n"
+            "[\n"
+            "  {\n"
+            "    \"blockhash\": \"xxxx\"    (hex string) The block hash\n"
+            "    \"logicalts\": n         (numeric) The logical timestamp\n"
+            "  }\n"
+            "]\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getblockhashes", "1558141697 1558141576")
+            + HelpExampleRpc("getblockhashes", "1558141697, 1558141576")
+            + HelpExampleCli("getblockhashes", "1558141697 1558141576 '{\"noOrphans\":false, \"logicalTimes\":true}'")
+            );
+
+    if (!fEnableGetBlockHashes) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Error: getblockhashes is disabled. "
+            "Run './zero-cli help getblockhashes' for instructions on how to enable this feature.");
+    }
+
+    unsigned int high = params[0].get_int();
+    unsigned int low = params[1].get_int();
+    bool fActiveOnly = false;
+    bool fLogicalTS = false;
+
+    if (params.size() > 2) {
+        UniValue noOrphans = find_value(params[2].get_obj(), "noOrphans");
+        if (!noOrphans.isNull())
+            fActiveOnly = noOrphans.get_bool();
+
+        UniValue returnLogical = find_value(params[2].get_obj(), "logicalTimes");
+        if (!returnLogical.isNull())
+            fLogicalTS = returnLogical.get_bool();
+    }
+
+    std::vector<std::pair<uint256, unsigned int> > blockHashes;
+    {
+        LOCK(cs_main);
+        if (!GetTimestampIndex(high, low, fActiveOnly, blockHashes)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
+                "No information available for block hashes");
+        }
+    }
+    UniValue result(UniValue::VARR);
+    for (std::vector<std::pair<uint256, unsigned int> >::const_iterator it=blockHashes.begin();
+            it!=blockHashes.end(); it++) {
+        if (fLogicalTS) {
+            UniValue item(UniValue::VOBJ);
+            item.push_back(Pair("blockhash", it->first.GetHex()));
+            item.push_back(Pair("logicalts", (int)it->second));
+            result.push_back(item);
+        } else {
+            result.push_back(it->first.GetHex());
+        }
+    }
+    return result;
+}
+
 UniValue getblockhash(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
@@ -493,7 +751,7 @@ UniValue getblock(const UniValue& params, bool fHelp)
     if (fHavePruned && !(pblockindex->nStatus & BLOCK_HAVE_DATA) && pblockindex->nTx > 0)
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Block not available (pruned data)");
 
-    if(!ReadBlockFromDisk(block, pblockindex))
+    if(!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus()))
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Can't read block from disk");
 
     if (verbosity == 0)
@@ -566,7 +824,7 @@ UniValue gettxout(const UniValue& params, bool fHelp)
             "     \"reqSigs\" : n,          (numeric) Number of required signatures\n"
             "     \"type\" : \"pubkeyhash\", (string) The type, eg pubkeyhash\n"
             "     \"addresses\" : [          (array of string) array of ZeroClassic addresses\n"
-            "        \"zcashaddress\"        (string) ZeroClassic address\n"
+            "        \"zeroclassicaddress\"        (string) ZeroClassic address\n"
             "        ,...\n"
             "     ]\n"
             "  },\n"
@@ -627,13 +885,15 @@ UniValue gettxout(const UniValue& params, bool fHelp)
 
 UniValue verifychain(const UniValue& params, bool fHelp)
 {
+    int nCheckLevel = GetArg("-checklevel", DEFAULT_CHECKLEVEL);
+    int nCheckDepth = GetArg("-checkblocks", DEFAULT_CHECKBLOCKS);
     if (fHelp || params.size() > 2)
         throw runtime_error(
             "verifychain ( checklevel numblocks )\n"
             "\nVerifies blockchain database.\n"
             "\nArguments:\n"
-            "1. checklevel   (numeric, optional, 0-4, default=3) How thorough the block verification is.\n"
-            "2. numblocks    (numeric, optional, default=288, 0=all) The number of blocks to check.\n"
+            "1. checklevel   (numeric, optional, 0-4, default=" + strprintf("%d", nCheckLevel) + ") How thorough the block verification is.\n"
+            "2. numblocks    (numeric, optional, default=" + strprintf("%d", nCheckDepth) + ", 0=all) The number of blocks to check.\n"
             "\nResult:\n"
             "true|false       (boolean) Verified or not\n"
             "\nExamples:\n"
@@ -643,14 +903,12 @@ UniValue verifychain(const UniValue& params, bool fHelp)
 
     LOCK(cs_main);
 
-    int nCheckLevel = GetArg("-checklevel", 3);
-    int nCheckDepth = GetArg("-checkblocks", 288);
     if (params.size() > 0)
         nCheckLevel = params[0].get_int();
     if (params.size() > 1)
         nCheckDepth = params[1].get_int();
 
-    return CVerifyDB().VerifyDB(pcoinsTip, nCheckLevel, nCheckDepth);
+    return CVerifyDB().VerifyDB(Params(), pcoinsTip, nCheckLevel, nCheckDepth);
 }
 
 /** Implementation of IsSuperMajority with better feedback */
@@ -714,6 +972,7 @@ void NetworkUpgradeDescPushBack(
     }
 }
 
+
 UniValue getblockchaininfo(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() != 0)
@@ -731,6 +990,7 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
             "  \"difficulty\": xxxxxx,     (numeric) the current difficulty\n"
             "  \"verificationprogress\": xxxx, (numeric) estimate of verification progress [0..1]\n"
             "  \"chainwork\": \"xxxx\"     (string) total amount of work in active chain, in hexadecimal\n"
+            "  \"size_on_disk\": xxxxxx,       (numeric) the estimated size of the block and undo files on disk\n"
             "  \"commitments\": xxxxxx,    (numeric) the current number of note commitments in the commitment tree\n"
             "  \"softforks\": [            (array) status of softforks in progress\n"
             "     {\n"
@@ -774,6 +1034,7 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
     obj.push_back(Pair("verificationprogress",  Checkpoints::GuessVerificationProgress(Params().Checkpoints(), chainActive.Tip())));
     obj.push_back(Pair("chainwork",             chainActive.Tip()->nChainWork.GetHex()));
     obj.push_back(Pair("pruned",                fPruneMode));
+    obj.push_back(Pair("size_on_disk",          CalculateCurrentUsage()));
 
     SproutMerkleTree tree;
     pcoinsTip->GetSproutAnchorAt(pcoinsTip->GetBestAnchor(SPROUT), tree);
@@ -811,6 +1072,11 @@ UniValue getblockchaininfo(const UniValue& params, bool fHelp)
 
         obj.push_back(Pair("pruneheight",        block->nHeight));
     }
+
+    if (Params().NetworkIDString() == "regtest") {
+        obj.push_back(Pair("fullyNotified", ChainIsFullyNotified()));
+    }
+
     return obj;
 }
 
@@ -926,6 +1192,10 @@ UniValue mempoolInfoToJSON()
     ret.push_back(Pair("bytes", (int64_t) mempool.GetTotalTxSize()));
     ret.push_back(Pair("usage", (int64_t) mempool.DynamicMemoryUsage()));
 
+    if (Params().NetworkIDString() == "regtest") {
+        ret.push_back(Pair("fullyNotified", mempool.IsFullyNotified()));
+    }
+
     return ret;
 }
 
@@ -973,11 +1243,11 @@ UniValue invalidateblock(const UniValue& params, bool fHelp)
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
 
         CBlockIndex* pblockindex = mapBlockIndex[hash];
-        InvalidateBlock(state, pblockindex);
+        InvalidateBlock(state, Params(), pblockindex);
     }
 
     if (state.IsValid()) {
-        ActivateBestChain(state);
+        ActivateBestChain(state, Params());
     }
 
     if (!state.IsValid()) {
@@ -1016,7 +1286,7 @@ UniValue reconsiderblock(const UniValue& params, bool fHelp)
     }
 
     if (state.IsValid()) {
-        ActivateBestChain(state);
+        ActivateBestChain(state, Params());
     }
 
     if (!state.IsValid()) {
@@ -1042,6 +1312,10 @@ static const CRPCCommand commands[] =
     { "blockchain",         "gettxout",               &gettxout,               true  },
     { "blockchain",         "gettxoutsetinfo",        &gettxoutsetinfo,        true  },
     { "blockchain",         "verifychain",            &verifychain,            true  },
+
+    // insightexplorer
+    { "blockchain",         "getblockdeltas",         &getblockdeltas,         false },    
+    { "blockchain",         "getblockhashes",         &getblockhashes,         true  },
 
     /* Not shown in help */
     { "hidden",             "invalidateblock",        &invalidateblock,        true  },

@@ -1,8 +1,9 @@
 // Copyright (c) 2016 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "uint256.h"
+#include "consensus/params.h"
 
 #include <atomic>
 #include <mutex>
@@ -54,6 +55,11 @@ public:
     double rate(const AtomicCounter& count);
 };
 
+enum DurationFormat {
+    FULL,
+    REDUCED
+};
+
 extern AtomicCounter transactionsValidated;
 extern AtomicCounter ehSolverRuns;
 extern AtomicCounter solutionTargetChecks;
@@ -63,9 +69,9 @@ void TrackMinedBlock(uint256 hash);
 
 void MarkStartTime();
 double GetLocalSolPS();
-int EstimateNetHeightInner(int height, int64_t tipmediantime,
-                           int heightLastCheckpoint, int64_t timeLastCheckpoint,
-                           int64_t genesisTime, int64_t targetSpacing);
+int EstimateNetHeight(const Consensus::Params& params, int currentBlockHeight, int64_t currentBlockTime);
+boost::optional<int64_t> SecondsLeftToNextEpoch(const Consensus::Params& params, int currentHeight);
+std::string DisplayDuration(int64_t time, DurationFormat format);
 
 void TriggerRefresh();
 
@@ -73,37 +79,39 @@ void ConnectMetricsScreen();
 void ThreadShowMetricsScreen();
 
 const std::string METRICS_ART =
-"\e[0m     \e[38;5;1m\e[48;5;15m   ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐   \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;0m                   ███████████████████   \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;0m                   ██          ██████    \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;0m                   █          ██████     \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;0m                             ██████      \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;0m                            ██████       \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;0m                           ██████        \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;0m                          ██████         \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;0m               \e[38;5;7m███\e[38;5;0m       ██████          \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;0m                 \e[38;5;7m███\e[38;5;0m    ██████           \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;0m                   \e[38;5;8m███\e[38;5;0m ██████            \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;0m                     \e[38;5;8m██\e[38;5;0m█████             \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;0m                       \e[38;5;8m██\e[38;5;0m██          █   \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;0m                         \e[38;5;8m███\e[38;5;0m        ██   \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;4m █████ █████ ████   ███    \e[38;5;8m██\e[38;5;0m█████████   \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;4m    █  █     █   █ █   █     \e[38;5;8m███\e[38;5;0m         \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;4m   █   ███   ████  █   █       \e[38;5;7m███\e[38;5;0m       \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;4m  █    █     █  █  █   █         \e[38;5;7m███\e[38;5;0m     \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;4m █████ █████ █   █  ███                  \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;0m                                         \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;6m  ███  █       █    ████  ████ █  ███    \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;6m █   █ █      █ █  █     █     █ █   █   \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;6m █     █     █   █  ███   ███  █ █       \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐\e[38;5;6m █   █ █     █████     █     █ █ █   █   \e[38;5;1m┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m ┌─┘\e[38;5;6m  ███  █████ █   █ ████  ████  █  ███    \e[38;5;1m└─┐ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m └─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┐ ┌─┘ \e[0m \n"
-"\e[0m     \e[38;5;1m\e[48;5;15m   └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘ └─┘   \e[0m \n";
-
-
-
+"\e[40m                                 \e[37;1;45m████\e[40m                                 \e[0m \n"
+"\e[40m                            \e[37;1;45m█████    █████\e[40m                            \e[0m \n"
+"\e[40m                       \e[37;1;45m█████              █████\e[40m                       \e[0m \n"
+"\e[40m                  \e[37;1;45m█████                        █████\e[40m                  \e[0m \n"
+"\e[40m             \e[37;1;45m█████                                  █████\e[40m             \e[0m \n"
+"\e[40m           \e[37;1;45m██                                            ██\e[40m           \e[0m \n"     
+"\e[40m           \e[37;1;45m██                                            ██\e[40m           \e[0m \n"
+"\e[40m         \e[37;1;45m██                                                ██\e[40m         \e[0m \n"
+"\e[40m         \e[37;1;45m██           ████████████████████████████████     ██\e[40m         \e[0m \n"
+"\e[40m       \e[37;1;45m██            ███████████████████████████████         ██\e[40m       \e[0m \n"
+"\e[40m       \e[37;1;45m██           ███████              █████████           ██\e[40m       \e[0m \n"
+"\e[40m     \e[37;1;45m██            ███                    ██████               ██\e[40m     \e[0m \n"
+"\e[40m     \e[37;1;45m██           ██                    ██████                 ██\e[40m     \e[0m \n"
+"\e[40m   \e[37;1;45m██                                 ██████                     ██\e[40m   \e[0m \n"
+"\e[40m   \e[37;1;45m██                               ██████                       ██\e[40m   \e[0m \n"
+"\e[40m \e[37;1;45m██                               ██████                           ██\e[40m \e[0m \n"
+"\e[40m \e[37;1;45m██       ████████              ██████              ████████       ██\e[40m \e[0m \n"
+"\e[40m \e[37;1;45m██                           ██████                               ██\e[40m \e[0m \n"
+"\e[40m   \e[37;1;45m██                       ██████                               ██\e[40m   \e[0m \n"
+"\e[40m   \e[37;1;45m██                     ██████                                 ██\e[40m   \e[0m \n"
+"\e[40m     \e[37;1;45m██                 ██████                    ██           ██\e[40m     \e[0m \n"
+"\e[40m     \e[37;1;45m██               ██████                    ███            ██\e[40m     \e[0m \n" 
+"\e[40m       \e[37;1;45m██           █████████              ███████           ██\e[40m       \e[0m \n"
+"\e[40m       \e[37;1;45m██         ███████████████████████████████            ██\e[40m       \e[0m \n"
+"\e[40m         \e[37;1;45m██     ████████████████████████████████           ██\e[40m         \e[0m \n"
+"\e[40m         \e[37;1;45m██                                                ██\e[40m         \e[0m \n"
+"\e[40m           \e[37;1;45m██                                            ██\e[40m           \e[0m \n"
+"\e[40m           \e[37;1;45m██                                            ██\e[40m           \e[0m \n"
+"\e[40m             \e[37;1;45m█████                                  █████\e[40m             \e[0m \n"
+"\e[40m                  \e[37;1;45m█████                        █████\e[40m                  \e[0m \n"
+"\e[40m                       \e[37;1;45m█████              █████\e[40m                       \e[0m \n"
+"\e[40m                            \e[37;1;45m█████    █████\e[40m                            \e[0m \n"
+"\e[40m                                 \e[37;1;45m████\e[40m                                 \e[0m \n";
 
 
 

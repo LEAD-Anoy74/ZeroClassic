@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 # Copyright (c) 2017 The Zcash developers
 # Distributed under the MIT software license, see the accompanying
-# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+# file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 import sys; assert sys.version_info < (3,), ur"This script does not run under Python 3. Please use Python 2.7.x."
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.authproxy import JSONRPCException
 from test_framework.util import assert_equal, initialize_chain_clean, \
-    start_node, connect_nodes_bi, wait_and_assert_operationid_status
+    start_node, connect_nodes_bi, wait_and_assert_operationid_status, \
+    get_coinbase_address
 
 from decimal import Decimal
 
@@ -36,6 +37,7 @@ class PaymentDisclosureTest (BitcoinTestFramework):
         print "Mining blocks..."
 
         self.nodes[0].generate(4)
+        self.sync_all()
         walletinfo = self.nodes[0].getwalletinfo()
         assert_equal(walletinfo['immature_balance'], 40)
         assert_equal(walletinfo['balance'], 0)
@@ -48,7 +50,7 @@ class PaymentDisclosureTest (BitcoinTestFramework):
         assert_equal(self.nodes[1].getbalance(), 10)
         assert_equal(self.nodes[2].getbalance(), 30)
 
-        mytaddr = self.nodes[0].getnewaddress()
+        mytaddr = get_coinbase_address(self.nodes[0])
         myzaddr = self.nodes[0].z_getnewaddress('sprout')
 
         # Check that Node 2 has payment disclosure disabled.

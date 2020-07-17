@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Copyright (c) 2018 The Zcash developers
 # Distributed under the MIT software license, see the accompanying
-# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+# file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 import sys; assert sys.version_info < (3,), ur"This script does not run under Python 3. Please use Python 2.7.x."
 
@@ -9,6 +9,7 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     connect_nodes_bi,
+    get_coinbase_address,
     initialize_chain_clean,
     start_nodes,
     wait_and_assert_operationid_status,
@@ -29,8 +30,6 @@ class FinalSaplingRootTest(BitcoinTestFramework):
 
     def setup_network(self, split=False):
         self.nodes = start_nodes(4, self.options.tmpdir, extra_args=[[
-            '-nuparams=5ba81b19:100', # Overwinter
-            '-nuparams=76b809bb:200', # Sapling
             '-txindex'                # Avoid JSONRPC error: No information available about transaction
             ]] * 4 )
         connect_nodes_bi(self.nodes,0,1)
@@ -41,7 +40,6 @@ class FinalSaplingRootTest(BitcoinTestFramework):
         self.sync_all()
 
     def run_test(self):
-        # Activate Overwinter and Sapling
         self.nodes[0].generate(200)
         self.sync_all()
 
@@ -56,7 +54,7 @@ class FinalSaplingRootTest(BitcoinTestFramework):
             assert_equal(blk["finalsaplingroot"], SAPLING_TREE_EMPTY_ROOT)
 
         # Node 0 shields some funds
-        taddr0 = self.nodes[0].getnewaddress()
+        taddr0 = get_coinbase_address(self.nodes[0])
         saplingAddr0 = self.nodes[0].z_getnewaddress('sapling')
         recipients = []
         recipients.append({"address": saplingAddr0, "amount": Decimal('20')})

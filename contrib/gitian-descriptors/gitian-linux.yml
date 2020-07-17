@@ -1,12 +1,14 @@
 ---
-name: "zcash-2.0.2"
+name: "zcash-2.1.1-1"
 enable_cache: true
 distro: "debian"
 suites:
 - "jessie"
+- "stretch"
 architectures:
 - "amd64"
 packages:
+- "curl"
 - "autoconf"
 - "automake"
 - "bsdmainutils"

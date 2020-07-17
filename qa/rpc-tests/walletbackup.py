@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Copyright (c) 2014 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
-# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+# file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 """
 Exercise the wallet backup code.  Ported from walletbackup.sh.
@@ -93,6 +93,7 @@ class WalletBackupTest(BitcoinTestFramework):
         # Must sync mempools before mining.
         sync_mempools(self.nodes)
         self.nodes[3].generate(1)
+        self.sync_all()
 
     # As above, this mirrors the original bash test.
     def start_three(self):

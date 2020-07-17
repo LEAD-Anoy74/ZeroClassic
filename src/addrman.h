@@ -1,6 +1,6 @@
 // Copyright (c) 2012 Pieter Wuille
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #ifndef BITCOIN_ADDRMAN_H
 #define BITCOIN_ADDRMAN_H
@@ -202,6 +202,9 @@ private:
 protected:
     //! secret key to randomize bucket select with
     uint256 nKey;
+
+    //! Source of random numbers for randomization in inner loops
+    FastRandomContext insecure_rand;
 
     //! Find an entry.
     CAddrInfo* Find(const CNetAddr& addr, int *pnId = NULL);

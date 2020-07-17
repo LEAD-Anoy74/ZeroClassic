@@ -1,6 +1,6 @@
 // Copyright (c) 2014 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #ifndef BITCOIN_TIMEDATA_H
 #define BITCOIN_TIMEDATA_H
@@ -9,6 +9,16 @@
 #include <assert.h>
 #include <stdint.h>
 #include <vector>
+
+#include "chain.h"
+
+static const int64_t DEFAULT_MAX_TIME_ADJUSTMENT = 0;
+static const int64_t LIMIT_MAX_TIME_ADJUSTMENT = 25 * 60;
+
+static_assert(LIMIT_MAX_TIME_ADJUSTMENT * 2 < MAX_FUTURE_BLOCK_TIME_MTP,
+              "LIMIT_MAX_TIME_ADJUSTMENT is too high given MAX_FUTURE_BLOCK_TIME_MTP");
+static_assert(MAX_FUTURE_BLOCK_TIME_MTP + LIMIT_MAX_TIME_ADJUSTMENT < MAX_FUTURE_BLOCK_TIME_ADJUSTED,
+              "LIMIT_MAX_TIME_ADJUSTMENT is too high given MAX_FUTURE_BLOCK_TIME_MTP and MAX_FUTURE_BLOCK_TIME_ADJUSTED");
 
 class CNetAddr;
 

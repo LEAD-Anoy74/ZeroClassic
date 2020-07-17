@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2014 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "rpc/server.h"
 
@@ -97,7 +97,7 @@ UniValue getpeerinfo(const UniValue& params, bool fHelp)
             "    \"pingtime\": n,             (numeric) ping time\n"
             "    \"pingwait\": n,             (numeric) ping wait\n"
             "    \"version\": v,              (numeric) The peer version, such as 170002\n"
-            "    \"subver\": \"/Longyearbyen:x.y.z[-v]/\",  (string) The string version\n"
+            "    \"subver\": \"/MagicBean:x.y.z[-v]/\",  (string) The string version\n"
             "    \"inbound\": true|false,     (boolean) Inbound (true) or Outbound (false)\n"
             "    \"startingheight\": n,       (numeric) The starting height (block) of the peer\n"
             "    \"banscore\": n,             (numeric) The ban score\n"
@@ -165,6 +165,37 @@ UniValue getpeerinfo(const UniValue& params, bool fHelp)
     return ret;
 }
 
+int32_t longestchain()
+{
+    int32_t max_height = 0;
+    vector<CNodeStats> vstats;
+    
+    {
+        //LOCK(cs_main);
+        CopyNodeStats(vstats);
+    }
+    
+    BOOST_FOREACH(const CNodeStats& stats, vstats)
+    {
+        CNodeStateStats statestats;
+        bool fStateStats = GetNodeStateStats(stats.nodeid,statestats);
+        if (statestats.nSyncHeight < 0)
+        {
+            continue;
+        }    
+        
+        int32_t peer_height = 0;
+        
+        peer_height = (stats.nStartingHeight > peer_height) ? stats.nStartingHeight : peer_height;
+        peer_height = (statestats.nSyncHeight > peer_height) ? statestats.nSyncHeight : peer_height;
+        peer_height = (statestats.nCommonHeight > peer_height) ? statestats.nCommonHeight : peer_height;
+        max_height = (peer_height > max_height) ? peer_height : max_height; 
+    }
+
+    return max_height;
+}
+
+
 UniValue addnode(const UniValue& params, bool fHelp)
 {
     string strCommand;
@@ -180,8 +211,8 @@ UniValue addnode(const UniValue& params, bool fHelp)
             "1. \"node\"     (string, required) The node (see getpeerinfo for nodes)\n"
             "2. \"command\"  (string, required) 'add' to add a node to the list, 'remove' to remove a node from the list, 'onetry' to try a connection to the node once\n"
             "\nExamples:\n"
-            + HelpExampleCli("addnode", "\"192.168.0.6:23801\" \"onetry\"")
-            + HelpExampleRpc("addnode", "\"192.168.0.6:23801\", \"onetry\"")
+            + HelpExampleCli("addnode", "\"192.168.0.6:8233\" \"onetry\"")
+            + HelpExampleRpc("addnode", "\"192.168.0.6:8233\", \"onetry\"")
         );
 
     string strNode = params[0].get_str();
@@ -224,8 +255,8 @@ UniValue disconnectnode(const UniValue& params, bool fHelp)
             "\nArguments:\n"
             "1. \"node\"     (string, required) The node (see getpeerinfo for nodes)\n"
             "\nExamples:\n"
-            + HelpExampleCli("disconnectnode", "\"192.168.0.6:23801\"")
-            + HelpExampleRpc("disconnectnode", "\"192.168.0.6:23801\"")
+            + HelpExampleCli("disconnectnode", "\"192.168.0.6:8233\"")
+            + HelpExampleRpc("disconnectnode", "\"192.168.0.6:8233\"")
         );
 
     CNode* pNode = FindNode(params[0].get_str());
@@ -256,7 +287,7 @@ UniValue getaddednodeinfo(const UniValue& params, bool fHelp)
             "    \"connected\" : true|false,          (boolean) If connected\n"
             "    \"addresses\" : [\n"
             "       {\n"
-            "         \"address\" : \"192.168.0.201:23801\",  (string) The ZeroClassic server host and port\n"
+            "         \"address\" : \"192.168.0.201:8233\",  (string) The Zcash server host and port\n"
             "         \"connected\" : \"outbound\"           (string) connection, inbound or outbound\n"
             "       }\n"
             "       ,...\n"
@@ -409,7 +440,7 @@ UniValue getdeprecationinfo(const UniValue& params, bool fHelp)
             "\nResult:\n"
             "{\n"
             "  \"version\": xxxxx,                      (numeric) the server version\n"
-            "  \"subversion\": \"/Longyearbyen:x.y.z[-v]/\",     (string) the server subversion string\n"
+            "  \"subversion\": \"/MagicBean:x.y.z[-v]/\",     (string) the server subversion string\n"
             "  \"deprecationheight\": xxxxx,            (numeric) the block height at which this version will deprecate and shut down\n"
             "}\n"
             "\nExamples:\n"
@@ -435,7 +466,7 @@ UniValue getnetworkinfo(const UniValue& params, bool fHelp)
             "\nResult:\n"
             "{\n"
             "  \"version\": xxxxx,                      (numeric) the server version\n"
-            "  \"subversion\": \"/Longyearbyen:x.y.z[-v]/\",     (string) the server subversion string\n"
+            "  \"subversion\": \"/MagicBean:x.y.z[-v]/\",     (string) the server subversion string\n"
             "  \"protocolversion\": xxxxx,              (numeric) the protocol version\n"
             "  \"localservices\": \"xxxxxxxxxxxxxxxx\", (string) the services we offer to the network\n"
             "  \"timeoffset\": xxxxx,                   (numeric) the time offset\n"

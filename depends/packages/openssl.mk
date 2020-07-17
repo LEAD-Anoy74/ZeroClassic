@@ -1,8 +1,8 @@
 package=openssl
-$(package)_version=1.1.1
+$(package)_version=1.1.1a
 $(package)_download_path=https://www.openssl.org/source
 $(package)_file_name=$(package)-$($(package)_version).tar.gz
-$(package)_sha256_hash=2836875a0f89c03d0fdf483941512613a50cfb421d6fd94b9f41d7279d586a3d
+$(package)_sha256_hash=fc20130f8b7cbd2fb918b2f14e2f429e109c31ddd0fb38fc5d71d9ffed3f9f41
 
 define $(package)_set_vars
 $(package)_config_env=AR="$($(package)_ar)" RANLIB="$($(package)_ranlib)" CC="$($(package)_cc)"
@@ -79,6 +79,7 @@ $(package)_config_opts+=no-zlib-dynamic
 $(package)_config_opts+=$($(package)_cflags) $($(package)_cppflags)
 $(package)_config_opts+=-DPURIFY
 $(package)_config_opts_linux=-fPIC -Wa,--noexecstack
+$(package)_config_opts_freebsd=-fPIC -Wa,--noexecstack
 $(package)_config_opts_x86_64_linux=linux-x86_64
 $(package)_config_opts_i686_linux=linux-generic32
 $(package)_config_opts_arm_linux=linux-generic32
@@ -87,13 +88,15 @@ $(package)_config_opts_mipsel_linux=linux-generic32
 $(package)_config_opts_mips_linux=linux-generic32
 $(package)_config_opts_powerpc_linux=linux-generic32
 $(package)_config_opts_x86_64_darwin=darwin64-x86_64-cc
+$(package)_config_opts_x86_64_freebsd=BSD-x86_64
+$(package)_config_opts_i686_freebsd=BSD-generic32
 $(package)_config_opts_x86_64_mingw32=mingw64
 $(package)_config_opts_i686_mingw32=mingw
 endef
 
 define $(package)_preprocess_cmds
-#  sed -i.old "/define DATE/d" util/mkbuildinf.pl && \
-#  sed -i.old "s|\"engines\", \"apps\", \"test\"|\"engines\"|" Configure
+  sed -i.old 's/built on: $$$$date/built on: date not available/' util/mkbuildinf.pl && \
+  sed -i.old "s|\"engines\", \"apps\", \"test\"|\"engines\"|" Configure
 endef
 
 define $(package)_config_cmds

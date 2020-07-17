@@ -1,7 +1,7 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #ifndef BITCOIN_PRIMITIVES_TRANSACTION_H
 #define BITCOIN_PRIMITIVES_TRANSACTION_H
@@ -36,6 +36,14 @@ static_assert(SAPLING_TX_VERSION >= SAPLING_MIN_TX_VERSION,
     "Sapling tx version must not be lower than minimum");
 static_assert(SAPLING_TX_VERSION <= SAPLING_MAX_TX_VERSION,
     "Sapling tx version must not be higher than maximum");
+
+// These constants are defined in the protocol § 7.1:
+// https://zips.z.cash/protocol/protocol.pdf#txnencoding
+#define OUTPUTDESCRIPTION_SIZE 948
+#define SPENDDESCRIPTION_SIZE 384
+static inline size_t JOINSPLIT_SIZE(int transactionVersion) {
+    return transactionVersion >= SAPLING_TX_VERSION ? 1698 : 1802;
+}
 
 /**
  * A shielded input to a transaction. It contains data that describes a Spend transfer.
@@ -227,7 +235,6 @@ public:
     JSDescription(): vpub_old(0), vpub_new(0) { }
 
     JSDescription(
-            bool makeGrothProof,
             ZCJoinSplit& params,
             const uint256& joinSplitPubKey,
             const uint256& rt,
@@ -240,7 +247,6 @@ public:
     );
 
     static JSDescription Randomized(
-            bool makeGrothProof,
             ZCJoinSplit& params,
             const uint256& joinSplitPubKey,
             const uint256& rt,
@@ -457,8 +463,8 @@ public:
         // to spend something, then we consider it dust.
         // A typical spendable txout is 34 bytes big, and will
         // need a CTxIn of at least 148 bytes to spend:
-        // so dust is a spendable txout less than 54 satoshis
-        // with default minRelayTxFee.
+        // so dust is a spendable txout less than
+        // 54*minRelayTxFee/1000 (in satoshis)
         if (scriptPubKey.IsUnspendable())
             return 0;
 
@@ -555,7 +561,7 @@ public:
     const CAmount valueBalance;
     const std::vector<SpendDescription> vShieldedSpend;
     const std::vector<OutputDescription> vShieldedOutput;
-    const std::vector<JSDescription> vjoinsplit;
+    const std::vector<JSDescription> vJoinSplit;
     const uint256 joinSplitPubKey;
     const joinsplit_sig_t joinSplitSig = {{0}};
     const binding_sig_t bindingSig = {{0}};
@@ -612,8 +618,8 @@ public:
         }
         if (nVersion >= 2) {
             auto os = WithVersion(&s, static_cast<int>(header));
-            ::SerReadWrite(os, *const_cast<std::vector<JSDescription>*>(&vjoinsplit), ser_action);
-            if (vjoinsplit.size() > 0) {
+            ::SerReadWrite(os, *const_cast<std::vector<JSDescription>*>(&vJoinSplit), ser_action);
+            if (vJoinSplit.size() > 0) {
                 READWRITE(*const_cast<uint256*>(&joinSplitPubKey));
                 READWRITE(*const_cast<joinsplit_sig_t*>(&joinSplitSig));
             }
@@ -702,7 +708,7 @@ struct CMutableTransaction
     CAmount valueBalance;
     std::vector<SpendDescription> vShieldedSpend;
     std::vector<OutputDescription> vShieldedOutput;
-    std::vector<JSDescription> vjoinsplit;
+    std::vector<JSDescription> vJoinSplit;
     uint256 joinSplitPubKey;
     CTransaction::joinsplit_sig_t joinSplitSig = {{0}};
     CTransaction::binding_sig_t bindingSig = {{0}};
@@ -758,8 +764,8 @@ struct CMutableTransaction
         }
         if (nVersion >= 2) {
             auto os = WithVersion(&s, static_cast<int>(header));
-            ::SerReadWrite(os, vjoinsplit, ser_action);
-            if (vjoinsplit.size() > 0) {
+            ::SerReadWrite(os, vJoinSplit, ser_action);
+            if (vJoinSplit.size() > 0) {
                 READWRITE(joinSplitPubKey);
                 READWRITE(joinSplitSig);
             }

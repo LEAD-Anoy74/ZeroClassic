@@ -1,7 +1,7 @@
 // Copyright (c) 2016 Jack Grigg
 // Copyright (c) 2016 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #ifndef BITCOIN_EQUIHASH_H
 #define BITCOIN_EQUIHASH_H
@@ -282,6 +282,7 @@ inline bool EhOptimisedSolveUncancellable(unsigned int n, unsigned int k, const 
     } else if (n == 192 && k == 7) {                      \
         ret = Eh192_7.IsValidSolution(base_state, soln);  \
     } else {                                             \
+        ret = false;                                     \
         throw std::invalid_argument("Unsupported Equihash parameters"); \
     }
 

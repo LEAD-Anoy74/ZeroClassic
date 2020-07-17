@@ -1,12 +1,12 @@
 // Copyright (c) 2011-2014 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "util.h"
 
 #include "clientversion.h"
 #include "primitives/transaction.h"
-#include "random.h"
+#include "test_random.h"
 #include "sync.h"
 #include "utilstrencodings.h"
 #include "utilmoneystr.h"

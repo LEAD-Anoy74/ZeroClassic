@@ -15,9 +15,10 @@ testScripts=(
     'prioritisetransaction.py'
     'wallet_treestate.py'
     'wallet_anchorfork.py'
+    'wallet_changeaddresses.py'
     'wallet_changeindicator.py'
     'wallet_import_export.py'
-    'wallet_protectcoinbase.py'
+    'wallet_shieldingcoinbase.py'
     'wallet_shieldcoinbase_sprout.py'
     'wallet_shieldcoinbase_sapling.py'
     'wallet_listreceived.py'
@@ -31,19 +32,22 @@ testScripts=(
     'wallet_listnotes.py'
     'mergetoaddress_sprout.py'
     'mergetoaddress_sapling.py'
+    'mergetoaddress_mixednotes.py'
     'listtransactions.py'
     'mempool_resurrect_test.py'
     'txn_doublespend.py'
     'txn_doublespend.py --mineblock'
     'getchaintips.py'
     'rawtransactions.py'
+    'getrawtransaction_insight.py'
     'rest.py'
+    'mempool_limit.py'
     'mempool_spendcoinbase.py'
     'mempool_reorg.py'
-    'mempool_tx_input_limit.py'
     'mempool_nu_activation.py'
     'mempool_tx_expiry.py'
     'httpbasics.py'
+    'multi_rpc.py'
     'zapwallettxes.py'
     'proxy_test.py'
     'merkle_blocks.py'
@@ -54,6 +58,9 @@ testScripts=(
     'key_import_export.py'
     'nodehandling.py'
     'reindex.py'
+    'addressindex.py'
+    'spentindex.py'
+    'timestampindex.py'
     'decodescript.py'
     'blockchain.py'
     'disablewallet.py'
@@ -71,6 +78,9 @@ testScripts=(
     'p2p_node_bloom.py'
     'regtest_signrawtransaction.py'
     'finalsaplingroot.py'
+    'shorter_block_times.py'
+    'sprout_sapling_migration.py'
+    'turnstile.py'
 );
 testScriptsExt=(
     'getblocktemplate_longpoll.py'
@@ -111,13 +121,14 @@ function runTestScript
 
     echo -e "=== Running testscript ${testName} ==="
 
+    local startTime=$(date +%s)
     if eval "$@"
     then
         successCount=$(expr $successCount + 1)
-        echo "--- Success: ${testName} ---"
+        echo "--- Success: ${testName} ($(($(date +%s) - $startTime))s) ---"
     else
         failures[${#failures[@]}]="$testName"
-        echo "!!! FAIL: ${testName} !!!"
+        echo "!!! FAIL: ${testName} ($(($(date +%s) - $startTime))s) !!!"
     fi
 
     echo

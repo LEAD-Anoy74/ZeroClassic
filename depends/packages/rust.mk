@@ -1,16 +1,29 @@
 package=rust
-$(package)_version=1.30.0
+$(package)_version=1.36.0
 $(package)_download_path=https://static.rust-lang.org/dist
 $(package)_file_name_linux=rust-$($(package)_version)-x86_64-unknown-linux-gnu.tar.gz
-$(package)_sha256_hash_linux=f620e3125cc505c842150bd873c0603432b6cee984cdae8b226cf92c8aa1a80f
+$(package)_sha256_hash_linux=15e592ec52f14a0586dcebc87a957e472c4544e07359314f6354e2b8bd284c55
 $(package)_file_name_darwin=rust-$($(package)_version)-x86_64-apple-darwin.tar.gz
-$(package)_sha256_hash_darwin=07008d90932712282bc599f1e9a226e97879c758dc1f935e6e2675e45694cc1b
-$(package)_file_name_mingw32=rust-$($(package)_version)-x86_64-pc-windows-gnu.tar.gz
-$(package)_sha256_hash_mingw32=99ef042778c46169b7e4b3ab2e15e3f3671e0b8655e47f867d50683c141e7609
+$(package)_sha256_hash_darwin=91f151ec7e24f5b0645948d439fc25172ec4012f0584dd16c3fb1acb709aa325
+$(package)_file_name_freebsd=rust-$($(package)_version)-x86_64-unknown-freebsd.tar.gz
+$(package)_sha256_hash_freebsd=eeeb1e9d0d7823c55f00f434789696e7249f465ba5966a5ab479040e3912c0e7
 
-ifeq ($(host_os),mingw32)
+# Mapping from GCC canonical hosts to Rust targets
+# If a mapping is not present, we assume they are identical
+$(package)_rust_target_x86_64-apple-darwin11=x86_64-apple-darwin
+$(package)_rust_target_x86_64-w64-mingw32=x86_64-pc-windows-gnu
+
+# Mapping from Rust targets to SHA-256 hashes
+$(package)_rust_std_sha256_hash_aarch64-unknown-linux-gnu=22bfc32b5003c3d5259babb202f3f66be16fa6f3c75c20f429a16d7ef5eb1928
+$(package)_rust_std_sha256_hash_x86_64-apple-darwin=7c6806809e010e5fba1780007ecff5c31f0ad2fcac1b414b98ca3baa0fb41b36
+$(package)_rust_std_sha256_hash_x86_64-pc-windows-gnu=3657c361f5d6048c2cb814f1773fece07b840276d60f012d0bf70993fa95a77e
+
+ifneq ($(canonical_host),$(build))
+$(package)_rust_target=$(if $($(package)_rust_target_$(canonical_host)),$($(package)_rust_target_$(canonical_host)),$(canonical_host))
+$(package)_exact_file_name=rust-std-$($(package)_version)-$($(package)_rust_target).tar.gz
+$(package)_exact_sha256_hash=$($(package)_rust_std_sha256_hash_$($(package)_rust_target))
 $(package)_build_subdir=buildos
-$(package)_extra_sources = $($(package)_file_name_$(build_os))
+$(package)_extra_sources=$($(package)_file_name_$(build_os))
 
 define $(package)_fetch_cmds
 $(call fetch_file,$(package),$($(package)_download_path),$($(package)_download_file),$($(package)_file_name),$($(package)_sha256_hash)) && \
@@ -22,19 +35,19 @@ define $(package)_extract_cmds
   echo "$($(package)_sha256_hash)  $($(package)_source)" > $($(package)_extract_dir)/.$($(package)_file_name).hash && \
   echo "$($(package)_sha256_hash_$(build_os))  $($(package)_source_dir)/$($(package)_file_name_$(build_os))" >> $($(package)_extract_dir)/.$($(package)_file_name).hash && \
   $(build_SHA256SUM) -c $($(package)_extract_dir)/.$($(package)_file_name).hash && \
-  mkdir mingw32 && \
-  tar --strip-components=1 -xf $($(package)_source) -C mingw32 && \
+  mkdir $(canonical_host) && \
+  tar --strip-components=1 -xf $($(package)_source) -C $(canonical_host) && \
   mkdir buildos && \
   tar --strip-components=1 -xf $($(package)_source_dir)/$($(package)_file_name_$(build_os)) -C buildos
 endef
 
 define $(package)_stage_cmds
-  ./install.sh --destdir=$($(package)_staging_dir) --prefix=$(host_prefix)/native --disable-ldconfig && \
-  cp -r ../mingw32/rust-std-x86_64-pc-windows-gnu/lib/rustlib/x86_64-pc-windows-gnu $($(package)_staging_dir)$(host_prefix)/native/lib/rustlib
+  bash ./install.sh --destdir=$($(package)_staging_dir) --prefix=$(host_prefix)/native --disable-ldconfig && \
+  ../$(canonical_host)/install.sh --destdir=$($(package)_staging_dir) --prefix=$(host_prefix)/native --disable-ldconfig
 endef
 else
 
 define $(package)_stage_cmds
-  ./install.sh --destdir=$($(package)_staging_dir) --prefix=$(host_prefix)/native --disable-ldconfig
+  bash ./install.sh --destdir=$($(package)_staging_dir) --prefix=$(host_prefix)/native --disable-ldconfig
 endef
 endif

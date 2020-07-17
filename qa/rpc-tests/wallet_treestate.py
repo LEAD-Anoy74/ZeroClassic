@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 # Copyright (c) 2016 The Zcash developers
 # Distributed under the MIT software license, see the accompanying
-# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+# file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 import sys; assert sys.version_info < (3,), ur"This script does not run under Python 3. Please use Python 2.7.x."
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, initialize_chain_clean, \
-    start_nodes, connect_nodes_bi, wait_and_assert_operationid_status
+    start_nodes, connect_nodes_bi, wait_and_assert_operationid_status, \
+    get_coinbase_address
 
 import time
 from decimal import Decimal
@@ -18,9 +19,9 @@ class WalletTreeStateTest (BitcoinTestFramework):
         print("Initializing test directory "+self.options.tmpdir)
         initialize_chain_clean(self.options.tmpdir, 4)
 
-    # Start nodes with -regtestprotectcoinbase to set fCoinbaseMustBeProtected to true.
+    # Start nodes with -regtestshieldcoinbase to set fCoinbaseMustBeShielded to true.
     def setup_network(self, split=False):
-        self.nodes = start_nodes(3, self.options.tmpdir, extra_args=[['-regtestprotectcoinbase','-debug=zrpc']] * 3 )
+        self.nodes = start_nodes(3, self.options.tmpdir, extra_args=[['-regtestshieldcoinbase','-debug=zrpc']] * 3 )
         connect_nodes_bi(self.nodes,0,1)
         connect_nodes_bi(self.nodes,1,2)
         connect_nodes_bi(self.nodes,0,2)
@@ -35,7 +36,7 @@ class WalletTreeStateTest (BitcoinTestFramework):
         self.nodes[1].generate(101)
         self.sync_all()
 
-        mytaddr = self.nodes[0].getnewaddress()     # where coins were mined
+        mytaddr = get_coinbase_address(self.nodes[0])
         myzaddr = self.nodes[0].z_getnewaddress('sprout')
 
         # Spend coinbase utxos to create three notes of 9.99990000 each

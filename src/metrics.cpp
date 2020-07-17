@@ -1,12 +1,13 @@
 // Copyright (c) 2016 The Zcash developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://www.opensource.org/licenses/mit-license.php .
 
 #include "metrics.h"
 
 #include "chainparams.h"
 #include "checkpoints.h"
 #include "main.h"
+#include "timedata.h"
 #include "ui_interface.h"
 #include "util.h"
 #include "utiltime.h"
@@ -24,7 +25,6 @@
 #include <sys/ioctl.h>
 #endif
 #include <unistd.h>
-
 
 void AtomicTimer::start()
 {
@@ -111,34 +111,38 @@ double GetLocalSolPS()
     return miningTimer.rate(solutionTargetChecks);
 }
 
-int EstimateNetHeightInner(int height, int64_t tipmediantime,
-                           int heightLastCheckpoint, int64_t timeLastCheckpoint,
-                           int64_t genesisTime, int64_t targetSpacing)
+std::string WhichNetwork()
 {
-    // We average the target spacing with the observed spacing to the last
-    // checkpoint (either from below or above depending on the current height),
-    // and use that to estimate the current network height.
-    int medianHeight = height > CBlockIndex::nMedianTimeSpan ?
-            height - (1 + ((CBlockIndex::nMedianTimeSpan - 1) / 2)) :
-            height / 2;
-    double checkpointSpacing = medianHeight > heightLastCheckpoint ?
-            (double (tipmediantime - timeLastCheckpoint)) / (medianHeight - heightLastCheckpoint) :
-            (double (timeLastCheckpoint - genesisTime)) / heightLastCheckpoint;
-    double averageSpacing = (targetSpacing + checkpointSpacing) / 2;
-    int netheight = medianHeight + ((GetTime() - tipmediantime) / averageSpacing);
-    // Round to nearest ten to reduce noise
-    return ((netheight + 5) / 10) * 10;
+    if (GetBoolArg("-regtest", false))
+        return "regtest";
+    if (GetBoolArg("-testnet", false))
+        return "testnet";
+    return "mainnet";
 }
 
-int EstimateNetHeight(int height, int64_t tipmediantime, CChainParams chainParams)
+int EstimateNetHeight(const Consensus::Params& params, int currentHeadersHeight, int64_t currentHeadersTime)
 {
-    auto checkpointData = chainParams.Checkpoints();
-    return EstimateNetHeightInner(
-        height, tipmediantime,
-        Checkpoints::GetTotalBlocksEstimate(checkpointData),
-        checkpointData.nTimeLastCheckpoint,
-        chainParams.GenesisBlock().nTime,
-        chainParams.GetConsensus().nPowTargetSpacing);
+    int64_t now = GetAdjustedTime();
+    if (currentHeadersTime >= now) {
+        return currentHeadersHeight;
+    }
+
+    int estimatedHeight = currentHeadersHeight + (now - currentHeadersTime) / params.PoWTargetSpacing(currentHeadersHeight);
+
+    int blossomActivationHeight = params.vUpgrades[Consensus::UPGRADE_BLOSSOM].nActivationHeight;
+    if (currentHeadersHeight >= blossomActivationHeight || estimatedHeight <= blossomActivationHeight) {
+        return ((estimatedHeight + 5) / 10) * 10;
+    }
+
+    int numPreBlossomBlocks = blossomActivationHeight - currentHeadersHeight;
+    int64_t preBlossomTime = numPreBlossomBlocks * params.PoWTargetSpacing(blossomActivationHeight - 1);
+    int64_t blossomActivationTime = currentHeadersTime + preBlossomTime;
+    if (blossomActivationTime >= now) {
+        return blossomActivationHeight;
+    }
+
+    int netheight =  blossomActivationHeight + (now - blossomActivationTime) / params.PoWTargetSpacing(blossomActivationHeight);
+    return ((netheight + 5) / 10) * 10;
 }
 
 void TriggerRefresh()
@@ -201,31 +205,90 @@ void ConnectMetricsScreen()
     uiInterface.InitMessage.connect(metrics_InitMessage);
 }
 
+std::string DisplayDuration(int64_t time, DurationFormat format)
+{
+    int days =  time / (24 * 60 * 60);
+    int hours = (time - (days * 24 * 60 * 60)) / (60 * 60);
+    int minutes = (time - (((days * 24) + hours) * 60 * 60)) / 60;
+    int seconds = time - (((((days * 24) + hours) * 60) + minutes) * 60);
+
+    std::string strDuration;
+    if (format == DurationFormat::REDUCED) {
+        if (days > 0) {
+            strDuration = strprintf(_("%d days"), days);
+        } else if (hours > 0) {
+            strDuration = strprintf(_("%d hours"), hours);
+        } else if (minutes > 0) {
+            strDuration = strprintf(_("%d minutes"), minutes);
+        } else {
+            strDuration = strprintf(_("%d seconds"), seconds);
+        }
+    } else {
+        if (days > 0) {
+            strDuration = strprintf(_("%d days, %d hours, %d minutes, %d seconds"), days, hours, minutes, seconds);
+        } else if (hours > 0) {
+            strDuration = strprintf(_("%d hours, %d minutes, %d seconds"), hours, minutes, seconds);
+        } else if (minutes > 0) {
+            strDuration = strprintf(_("%d minutes, %d seconds"), minutes, seconds);
+        } else {
+            strDuration = strprintf(_("%d seconds"), seconds);
+        }
+    }
+    return strDuration;
+}
+
+boost::optional<int64_t> SecondsLeftToNextEpoch(const Consensus::Params& params, int currentHeight)
+{
+    auto nextHeight = NextActivationHeight(currentHeight, params);
+    if (nextHeight) {
+        return (nextHeight.get() - currentHeight) * params.PoWTargetSpacing(nextHeight.get() - 1);
+    } else {
+        return boost::none;
+    }
+}
+
 int printStats(bool mining)
 {
     // Number of lines that are always displayed
-    int lines = 4;
+    int lines = 5;
 
     int height;
-    int64_t tipmediantime;
+    int64_t currentHeadersHeight;
+    int64_t currentHeadersTime;
     size_t connections;
     int64_t netsolps;
+    const Consensus::Params& params = Params().GetConsensus();
     {
         LOCK2(cs_main, cs_vNodes);
         height = chainActive.Height();
-        tipmediantime = chainActive.Tip()->GetMedianTimePast();
+        currentHeadersHeight = pindexBestHeader ? pindexBestHeader->nHeight: -1;
+        currentHeadersTime = pindexBestHeader ? pindexBestHeader->nTime : 0;
         connections = vNodes.size();
         netsolps = GetNetworkHashPS(120, -1);
     }
     auto localsolps = GetLocalSolPS();
 
-    if (IsInitialBlockDownload()) {
-        int netheight = EstimateNetHeight(height, tipmediantime, Params());
-        int downloadPercent = netheight > 0 ? height * 100 / netheight : 0;
+    if (IsInitialBlockDownload(Params())) {
+        int netheight = currentHeadersHeight == -1 || currentHeadersTime == 0 ? 
+            0 : EstimateNetHeight(params, currentHeadersHeight, currentHeadersTime);
+        int downloadPercent = height * 100 / netheight;
         std::cout << "     " << _("Downloading blocks") << " | " << height << " / ~" << netheight << " (" << downloadPercent << "%)" << std::endl;
     } else {
         std::cout << "           " << _("Block height") << " | " << height << std::endl;
     }
+
+    auto secondsLeft = SecondsLeftToNextEpoch(params, height);
+    std::string strUpgradeTime;
+    if (secondsLeft) {
+        auto nextHeight = NextActivationHeight(height, params).value();
+        auto nextBranch = NextEpoch(height, params).value();
+        strUpgradeTime = strprintf(_("%s at block height %d, in around %s"),
+                                   NetworkUpgradeInfo[nextBranch].strName, nextHeight, DisplayDuration(secondsLeft.value(), DurationFormat::REDUCED));
+    }
+    else {
+        strUpgradeTime = "Unknown";
+    }
+    std::cout << "           " << _("Next upgrade") << " | " << strUpgradeTime << std::endl;
     std::cout << "            " << _("Connections") << " | " << connections << std::endl;
     std::cout << "  " << _("Network solution rate") << " | " << netsolps << " Sol/s" << std::endl;
     if (mining && miningTimer.running()) {
@@ -256,7 +319,7 @@ int printMiningStatus(bool mining)
             }
             if (fvNodesEmpty) {
                 std::cout << _("Mining is paused while waiting for connections.") << std::endl;
-            } else if (IsInitialBlockDownload()) {
+            } else if (IsInitialBlockDownload(Params())) {
                 std::cout << _("Mining is paused while downloading blocks.") << std::endl;
             } else {
                 std::cout << _("Mining is paused (a JoinSplit may be in progress).") << std::endl;
@@ -281,24 +344,9 @@ int printMetrics(size_t cols, bool mining)
     // Number of lines that are always displayed
     int lines = 3;
 
-    // Calculate uptime
-    int64_t uptime = GetUptime();
-    int days = uptime / (24 * 60 * 60);
-    int hours = (uptime - (days * 24 * 60 * 60)) / (60 * 60);
-    int minutes = (uptime - (((days * 24) + hours) * 60 * 60)) / 60;
-    int seconds = uptime - (((((days * 24) + hours) * 60) + minutes) * 60);
+    // Calculate and display uptime
+    std::string duration = DisplayDuration(GetUptime(), DurationFormat::FULL);
 
-    // Display uptime
-    std::string duration;
-    if (days > 0) {
-        duration = strprintf(_("%d days, %d hours, %d minutes, %d seconds"), days, hours, minutes, seconds);
-    } else if (hours > 0) {
-        duration = strprintf(_("%d hours, %d minutes, %d seconds"), hours, minutes, seconds);
-    } else if (minutes > 0) {
-        duration = strprintf(_("%d minutes, %d seconds"), minutes, seconds);
-    } else {
-        duration = strprintf(_("%d seconds"), seconds);
-    }
     std::string strDuration = strprintf(_("Since starting this node %s ago:"), duration);
     std::cout << strDuration << std::endl;
     lines += (strDuration.size() / cols);
@@ -334,7 +382,7 @@ int printMetrics(size_t cols, bool mining)
                         chainActive.Contains(mapBlockIndex[hash])) {
                     int height = mapBlockIndex[hash]->nHeight;
                     CAmount subsidy = GetBlockSubsidy(height, consensusParams);
-                    if ((height > 0) && (height <= consensusParams.GetLastFoundersRewardBlockHeight())) {
+                    if ((height > 0) && (height <= consensusParams.GetLastFoundersRewardBlockHeight(height))) {
                         subsidy -= subsidy/5;
                     }
                     if (std::max(0, COINBASE_MATURITY - (tipHeight - height)) > 0) {
@@ -458,6 +506,7 @@ void ThreadShowMetricsScreen()
 
         // Clear screen
         std::cout << "\e[2J";
+
         // Print art
 #ifdef WIN32
 		// dirty workaround, avoiding UTF8 to locale conversion routines
@@ -473,7 +522,7 @@ void ThreadShowMetricsScreen()
 #else
 		std::cout << METRICS_ART << std::endl;
 #endif        
-        std::cout << std::endl;
+        //std::cout << std::endl;
 
         // Thank you text
         //std::cout << _("Thank you for running a ZeroClassic node!") << std::endl;
